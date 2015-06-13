@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<!-- Copyright © 2015 Konsultointi Ari Vainio Oy http://www.arivain.com
+Source code for this program is dual-licensed under the EUPL v1.2 and AGPLv3 licenses. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>ParkkiJaRaide</title>
+
+<!-- Include meta tag to ensure proper rendering and touch zooming -->
+<meta name="viewport" content="minimal-ui, width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta names="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+<link rel="stylesheet" href="http://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.css" />
+
+<style>
+
+table {
+    border-collapse: collapse;
+    border-spacing: 0;
+    border: 0px solid #000;
+}
+td,th {
+    border-top: 0px solid #000;
+    padding: 1px 1px;
+}
+
+
+
+tbody tr:nth-child(even)  td { background-color: #000; }
+
+@media screen and (max-width: 640px) {
+	table {
+		overflow-x: auto;
+		display: block;
+	}
+	
+}
+
+.nav-glyphish-example .ui-btn .ui-btn-inner {
+padding-top: 40px !important;
+}
+.nav-glyphish-example .ui-btn .ui-icon {
+width: 30px!important;
+height: 30px!important;
+margin-left: -15px !important;
+box-shadow: none!important;
+-moz-box-shadow: none!important;
+-webkit-box-shadow: none!important;
+-webkit-border-radius: none !important;
+border-radius: none !important;
+}
+  
+#tabFac .ui-icon-parking-place {
+	background-image: url("my_parking18.png") ;
+	background-size: 22px 22px;
+	background-repeat: no-repeat;
+}
+#tabHub .ui-icon-railway-station {
+	background-image: url("my_railway_station18.png") ;
+	background-size: 22px 22px;
+	background-repeat: no-repeat;
+}
+
+
+
+#mapview { width:100%; height:40%; }  //TODO: korkeuden säätö fixContentHeight funktiolla ei toiminut
+
+.ol-popup {
+	position: relative;
+	background-color: white;
+	-webkit-filter: drop-shadow(0 1px 4px rgba(0,0,0,0.2));
+	filter: drop-shadow(0 1px 4px rgba(0,0,0,0.2));
+	padding: 15px;
+	border-radius: 10px;
+	border: 1px solid #cccccc;
+	bottom: 32px;
+	width: 200px;
+}
+.ol-popup:after, .ol-popup:before {
+	top: 100%;
+	border: solid transparent;
+	content: " ";
+	height: 0;
+	width: 0;
+	position: absolute;
+	pointer-events: none;
+}
+.ol-popup:after {
+	border-top-color: white;
+	border-width: 10px;
+	left: 50%;
+	margin-left: -10px;
+}
+.ol-popup:before {
+	border-top-color: #cccccc;
+	border-width: 11px;
+	left: 50%;
+	margin-left: -11px;
+}
+#popup-content {
+	word-wrap: break-word;
+}
+
+</style>
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+<script src="http://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.js"></script>
+
+<script src="./js/routes.js"></script>
+<script src="./js/view.js"></script>
+<script src="./js/model.js"></script>
+
+<script src="./ol/ol-debug.js"></script>
+<script src="./js/map.js"></script>
+
+<script>
+
+// Controller
+
+var currentView = 0;
+var FACILITIES = 1;
+var HUBS = 2;
+var SETUP = 3;
+
+var homeUrl = window.location.href;
+
+function searchAndShowFacilities() {
+	facilitiesArray = new Array();
+	$('#outarea').html("");
+	if (document.forms["f1"].route.selectedIndex > 0) {
+		var s = document.forms["f1"].route.value;
+		getFacilitiesByRoute(s);
+	}
+	else {
+		if (document.getElementById("hakuteksti").value == "") {
+				document.getElementById("feedbacktext").innerHTML = 
+				"Rajaa pysäköintipaikkojen hakua valitsemalla reitti tai alue, " +
+				"jolta etsit paikkaa. Reittejä ovat esim. sisääntuloväylät kuten Nelostie " + 
+				"tai rautatielinjat. Valitse se, jonka varrelta etsit parkkipaikkaa vaihtaaksesi " +
+				"junaan, metroon tai bussiin. " +
+				"Voit vaihtoehtoisesti kirjoitaa hakukenttään paikan nimen, jota erityisesti etsit. ";
+				return(false);
+		}
+		else {
+			getFacilities(document.getElementById("hakuteksti").value);
+		}
+	}
+	return false;
+}
+
+function searchAndShowHubs() {
+	hubsArray = new Array();
+	$('#outarea').html("");
+	if (document.forms["f1"].route.selectedIndex > 0) {
+		getHubsByRoute();
+	}
+	else {
+		getHubs();
+	}
+	return false;
+}
+
+
+function searchAndShow() {
+	document.getElementById("feedbacktext").innerHTML = ""; // Pyyhitään vanhat pois
+	if (currentView == 0)
+		setFacilitiesSelected();
+	if (currentView == FACILITIES) {
+		setFacilitiesSelected();
+		searchAndShowFacilities();
+    
+	}
+	else if (currentView == HUBS) {
+		setFacilitiesSelected();
+		searchAndShowHubs();
+	}
+	else {
+		//showSetup();
+	}
+}
+
+function setFacilitiesSelected() {
+		$('#tabFac').addClass('ui-btn-active');
+		$('#tabHub').removeClass('ui-btn-active');
+		$('#tabSet').removeClass('ui-btn-active');
+		currentView = FACILITIES;
+		$('#page1').page();
+}
+function setHubsSelected() {
+		$('#tabFac').removeClass('ui-btn-active');
+		$('#tabHub').addClass('ui-btn-active');
+		$('#tabSet').removeClass('ui-btn-active');
+		currentView = HUBS;
+		$('#page1').page();
+}
+function setSetupSelected() {
+		$('#tabFac').removeClass('ui-btn-active');
+		$('#tabHub').removeClass('ui-btn-active');
+		$('#tabSet').addClass('ui-btn-active');
+		currentView = SETUP;
+		$('#page1').page();
+}
+	
+function searchAndShow1() {
+		document.getElementById("feedbacktext").innerHTML = ""; // Pyyhitään vanhat pois
+		setFacilitiesSelected();
+		searchAndShowFacilities();
+}
+
+function searchAndShow2() {
+		document.getElementById("feedbacktext").innerHTML = ""; // Pyyhitään vanhat pois
+		setHubsSelected();
+		searchAndShowHubs();
+}
+
+function backToHome() {
+	window.location = homeUrl;
+	//searchAndShow1();
+}
+
+
+// SETUP AND STORAGE HANDLING 
+// Note moved to this index.html from setup.js, because did't work there
+
+var GOOGLE = 0;
+var OPENSTREETMAP = 1
+var APPLEMAP = 2
+
+var initValues = {
+  "map": GOOGLE,
+  "defRoute": "",
+  "dest": "",
+  "txtSearch": ""
+}
+
+var SETUPSTORAGEID = 'setup';
+
+function setCookie(cname, cvalue) {
+    var d = new Date();
+    var exdays = 1000;
+    d.setTime(d.getTime() + (exdays*24*60*60*1000));
+    var expires = "expires="+d.toUTCString();
+    document.cookie = cname + "=" + cvalue + "; " + expires;
+} 
+
+function getCookie(cname) {
+    var name = cname + "=";
+    var ca = document.cookie.split(';');
+    for(var i=0; i<ca.length; i++) {
+        var c = ca[i];
+        while (c.charAt(0)==' ') c = c.substring(1);
+        if (c.indexOf(name) == 0) return c.substring(name.length,c.length);
+    }
+    return "";
+} 
+
+function writeSetupToLocalstorage() {  // Tämän kanssa tuli ongelmia iPhonen Safarin kanssa. EI KÄYTÖSSÄ
+	if (typeof(localStorage) != 'undefined') {
+		localStorage.setItem('initValues.map', initValues.map);
+		localStorage.setItem('initValues.defRoute', initValues.defRoute);
+		localStorage.setItem('initValues.dest', initValues.dest);
+		localStorage.setItem('initValues.txtSearch', initValues.txtSearch);
+		//alert("Written initValues: " + initValues.map + "," + initValues.defRoute + "," + initValues.dest);
+	}
+	else {
+		console.log("Browser doesn\'t support local storage");
+	}
+}
+
+function writeSetup() {  // to cookie
+		setCookie('initValues.map', initValues.map);
+		setCookie('initValues.defRoute', initValues.defRoute);
+		setCookie('initValues.dest', initValues.dest);
+		setCookie('initValues.txtSearch', initValues.txtSearch);
+}
+
+function loadSetupFromLocalStorage() {  // EI KÄYTÖSSÄ
+	if (typeof(localStorage) != 'undefined') {
+		initValues.map = localStorage.getItem('initValues.map');
+		initValues.defRoute = localStorage.getItem('initValues.defRoute');
+		initValues.dest = localStorage.getItem('initValues.dest');
+		initValues.txtSearch = localStorage.getItem('initValues.txtSearch');
+		console.log("Loaded setup: " + initValues.map + "," + initValues.defRoute + "," + initValues.txtSearch + "," + initValues.dest);
+		//alert("Loaded initValues: " + initValues.map + "," + initValues.defRoute + "," + initValues.dest);		
+	}
+	else {
+		console.log("Browser doesn\'t support local storage");
+	}
+}
+
+function loadSetup() {  // from cookie
+		initValues.map = getCookie('initValues.map');
+		if (typeof(initValues.map) != 'undefined')
+			if (initValues.map == "")
+				initValues.map = 0; 
+		initValues.defRoute = getCookie('initValues.defRoute');
+		initValues.dest = getCookie('initValues.dest');
+		initValues.txtSearch = getCookie('initValues.txtSearch');
+		console.log("Loaded setup: " + initValues.map + "," + initValues.defRoute + "," + initValues.txtSearch + "," + initValues.dest);
+}
+
+function setItUp() {
+	initValues.map = document.getElementById("mapselect").selectedIndex;
+
+	//alert(document.getElementById("map").selectedIndex);
+	
+	initValues.defRoute = document.getElementById("defaultRoute").selectedIndex;
+	//alert(initValues.defaultRoute);
+	
+	initValues.dest = document.getElementById("destination").value;
+	//alert(initValues.dest);	
+	
+	initValues.txtSearch = document.getElementById("txtSearchInit").value;
+	
+	writeSetup();
+	console.log("Written setup: " + initValues.map + "," + initValues.defRoute + "," + initValues.txtSearch + "," + initValues.dest);
+}
+
+    
+    
+function initSetupFields() {
+	if (typeof(parseInt(initValues.map)) == 'number') {
+		console.log("initValues.map = " + initValues.map);
+		
+		document.getElementById("mapselect").options[initValues.map].selected = true;
+	}
+	else {
+		initValues.map = 0;
+	}
+	if (typeof(initValues.defRoute) != 'undefined') {
+		//alert("typeof defroute: " + typeof(initValues.defRoute) + " " + initValues.defRoute);
+		// Seuraava rivi ei toimi, koska optiolistaa ei ole vieläinitoitu tässä vaiheessa.
+		//document.getElementById("defaultRoute").options[initValues.defaultRoute].selected = true;
+	}
+	else {
+		alert("defRoute not number");
+		initValues.defRoute = 0;
+	}
+
+	document.getElementById("destination").value = initValues.dest;
+	document.getElementById("txtSearchInit").value = initValues.txtSearch;
+	document.getElementById("hakuteksti").value = initValues.txtSearch;
+	console.log("hakuteksti.value=" + initValues.txtSearch);
+	
+}
+    
+
+/*
+$(document).on("pagebeforeshow","#page1",function(){
+  		//alert("pagebeforeshow event " + $('#route').selectedIndex + "," + $('#hakuteksti').value );
+  		//if (($('#route').selectedIndex == 0) && ($('#hakuteksti').value == "")) {
+	  		$('#route').selectedIndex = (typeof(initValues.defRoute) == "number"?initValues.defRoute:0);
+	  		//alert($('#route').selectedIndex);
+	  	//}
+});
+*/
+    
+    
+function test(id) {  // Called when marker on the map touched or clicked
+	alert("ID: " + id);
+}
+
+var header, footer, content, viewHeight, contentHeight;
+
+
+// fix height of content
+function fixContentHeight() {
+	header = $("div[data-role='header']:visible");  
+	searchdiv = $("div[id='searchDiv']:visible");
+	mapdiv = $("div[data-role='mapview']:visible:visible");
+	viewHeight = $(window).height();
+	contentHeight = viewHeight - header.outerHeight() - searchdiv.outerHeight();
+	mapdiv.height(Math.floor(contentHeight/2)); // 50% for map
+	mapdiv.updateSize();
+}
+
+$(document).ready(function(){
+
+	loadSetup();
+
+    
+    $("#hakuteksti").change(function(e){
+    	searchAndShow();
+    });
+
+    $("#route").change(function(e){
+    	searchAndShow();    	
+    });
+
+    $("#defaultRoute").change(function(e){
+    	setItUp();    	
+    });
+    
+    $("#map").change(function(e){
+    	setItUp();    	
+    });
+    
+    $("#destination").change(function(e){
+    	setItUp();    	
+    });
+    
+    
+
+    $("#f1").submit(function(e){
+    	searchAndShow();    	
+    });
+    
+    $('#detail').bind('pageinit', function() {
+ 		 $('#buttonarea').listview('refresh');
+	});
+    
+    /*
+    $("#stFacs").change(function(e){
+    	searchAndShow();    	
+    });
+    
+    $("#stHubs").change(function(e){
+    	searchAndShow();    	
+    });
+    */
+    
+    window.scrollTo(0,1);
+    
+    populateRouteList(initValues.defRoute);
+    populateDefaultRouteList(initValues.defRoute);
+    // document.getElementById("defaultRoute").options[initValues.defaultRoute].selected = true;
+   
+    
+    //if (typeof(initValues.defRoute) == 'number')
+	//    document.getElementById("route").options[initValues.defRoute].selected = true;
+    
+    
+    getCurrentPosition();
+    
+    initSetupFields();
+
+    initMap('mapview'); // Vaihdoin divin nime
+    $(window).on('resize orientationchange pageshow', fixContentHeight);
+    document.body.onload = fixContentHeight();
+
+}); 
+
+$( document ).on( "pageinit", "#page1", function( event ) {
+  $("#route").selectmenu('refresh', true);
+});
+$( document ).on( "pageinit", "#setup", function( event ) {
+  $("#map").selectmenu('refresh', true);
+  $("#defaultRoute").selectmenu('refresh', true);
+});
+
+
+</script>
+
+
+</head>
+
+<body> 
+
+<!-- page1 -->
+<div data-role="page" id="page1" data-theme="a" style="padding-right:0px; padding-left:0px;">
+
+	<!-- Header -->
+	<div id="headerDiv" role="banner" class="ui-header ui-bar-a" data-role="header" data-position="fixed">
+		<a href="#info" data-icon="info" data-iconpos="notext" data-transition="slidefade"></a>
+		<h1 aria-level="1" role="heading" class="ui-title">ParkkiJaRaide</h1>
+		<a href="#setup" data-icon="gear" data-iconpos="notext" data-transition="slidefade"></a>
+		
+		<div role="navigation" class="nav-glyphish-example" data-role="navbar" data-theme="a" data-grid="a">
+			<ul class="ui-grid-a">
+				<li class="ui-block-a">
+					<a id="tabFac" onClick="searchAndShow1()" 
+			    		  href="#"> <!-- location -->
+			    		<span  class="ui-btn-text"><img src="my_parking18.png"><br/>P-paikat</span>
+			    	</a>
+			    </li>
+				<li class="ui-block-b">
+					<a id="tabHub" onClick="searchAndShow2()" 
+						 href="#"> <!-- arrow-u-r-->
+						<span class="ui-btn-text"><img src="my_railway_station18.png"><br/>Pysäkit</span>
+					</a>
+				</li>	
+			</ul>
+		</div><!-- /navbar -->
+	</div>
+
+	<!-- Search fields -->
+	<div id="searchDiv" class="ui-field-contain" style="padding-right:8px; padding-left:8px; padding-bottom: 0px; padding-top: 0px; margin-top: 2px">
+		<form onSubmit="return(false)" name="f1" accept-charset="utf-8">
+			<select name="route" id="route" style="width:100%">
+				<option value="-Valitse reitti-">-Reitti josta paikkoja haetaan-</option>
+			</select>
+			<input type="text" name="hakuteksti" id="hakuteksti" value="" placeholder="-tai syötä paikka, jonne parkkeeraat-">
+			<span id="feedbacktext"></span>
+		</form>
+	</div><!-- search fields-->
+
+	<!-- Search results -->
+	<div id="mapview">
+		<div id="popup" class="ol-popup">
+			<div id="popup-content"></div>
+		</div>
+	</div>
+
+	<div id="outarea" overflow-x: scroll;  style="padding-right:0px; padding-left:0px;padding-top:0px; margin-left:4px;margin-right:4px">
+		<!--a href="#" onClick='window.location = baseurl + "facilities"' id="Test" class="ui-btn ui-btn-inline">Test</a-->
+	</div>
+</div> <!-- page1 -->
+
+<!-- detail page for facility details -->
+<div data-role="page" id="detail" data-theme="a" style="padding-right:0px; padding-left:0px;">
+	<div role="banner" class="ui-header ui-bar-a" data-role="header" data-position="fixed">
+		<a href="#page1"   data-icon="back">Takaisin</a>
+		<h1 aria-level="1" role="heading" class="ui-title">ParkkiJaRaide</h1>
+	</div>
+	<div id="detailcontent" overflow-x: scroll;  style="padding-right:0px; padding-left:0px;padding-top:0px; margin-left:4px;margin-right:4px">
+	
+	<div>
+	<img src="p.jpg" height="40px">
+	<span id="explanations"></span>
+	</div>
+	
+	<ul class="ui-listview ui-listview-inset ui-corner-all ui-shadow" data-inset="true" data-role="listview" id="detaillinks">
+	<li class="ui-li-has-alt">
+		<a data-role="button"
+			href="#"
+			onClick="goToOSM()">Näytä Open Street map kartalla
+		</a>
+	</li>
+	<li class="ui-li-has-alt">
+		<a data-role="button"
+			href="#"
+			onClick="goToGoogleMaps()">Näytä Googlen kartalla
+		</a>
+	</li>
+	<li class="ui-li-has-alt">
+		<a data-role="button"
+			href="#"
+			onClick="gotoFacilityReittiopas()">Näytä Reittiopas täältä eteenpäin
+		</a>
+	</li>
+	<li class="ui-li-has-alt">
+		<a data-role="button" id="listhubs"  
+			href="#page1" 
+			onClick="listStops()">&lt;Listaa lähellä olevat pysäkit
+		</a>
+	</li>
+	<li class="ui-li-has-alt">
+		<a data-role="button" id="backtohome" href="#page1" >&lt;Takaisin</a>
+	</li>
+	</ul>
+
+	</div>	
+</div>
+
+<!-- detail page for hub details -->
+<div data-role="page" id="hubdetail" data-theme="a" style="padding-right:0px; padding-left:0px;">
+	<div role="banner" class="ui-header ui-bar-a" data-role="header" data-position="fixed">
+		<a href="#page1" data-icon="back">Takaisin</a>
+		<h1 aria-level="1" role="heading" class="ui-title">ParkkiJaRaide</h1>
+	</div>
+	<div id="detailcontent" overflow-x: scroll;  style="padding-right:0px; padding-left:0px;padding-top:0px; margin-left:4px;margin-right:4px">
+	
+	
+	<div>
+	<img src="metro.jpg" height="40px"><img src="bussi.jpg" height="40px">
+	<span id="hubexplanations"></span>
+	</div>
+	
+	<ul class="ui-listview ui-listview-inset ui-corner-all ui-shadow" data-inset="true" data-role="listview" id="detaillinks">
+	<li class="ui-li-has-alt">
+		<a data-role="button"
+			href="#"
+			onClick="goToOSMHub()">Näytä Open Street map kartalla
+		</a>
+	</li>
+	<li class="ui-li-has-alt">
+		<a data-role="button"
+			href="#"
+			onClick="goToGoogleMapsHub()">Näytä Googlen kartalla
+		</a>
+	</li>
+	<li class="ui-li-has-alt">
+		<a data-role="button"
+			href="#"
+			onClick="gotoHubReittiopas()">Näytä Reittiopas täältä eteenpäin
+		</a>
+	</li>
+	<li class="ui-li-has-alt">
+		<a data-role="button" id="listfacilities"  
+			href="#page1" 
+			onClick="listFacilities()">&lt;Listaa lähellä olevat P-paikat
+		</a>
+	</li>
+	<li class="ui-li-has-alt">
+		<a data-role="button" id="backtohome" href="#page1">&lt;Takaisin</a>
+	</li>
+	</ul>
+
+	</div>	
+</div>
+
+
+<!-- info page -->
+<div data-role="page" id="info" data-theme="a" style="padding-right:0px; padding-left:0px;">
+	<div role="banner" class="ui-header ui-bar-a" data-role="header" data-position="fixed">
+		<a href="#" onclick="window.history.back()" data-icon="back">Takaisin</a>
+		<h1 aria-level="1" role="heading" class="ui-title">ParkkiJaRaide</h1>
+	</div>
+
+	<div class="ui-field-contain" style="padding-right:8px; padding-left:8px; padding-bottom: 0px; padding-top: 0px; margin-top: 2px">
+		<div data-role="collapsible-set">
+		
+			
+		<div data-role="collapsible" data-collapsed="true">
+		<h3>HSL:n muita palveluita</h3>
+		Onko matkakorttisi tyhjä? Etsi lipunmyyntipiste.<br/>
+		<a data-role="button" href="https://www.hsl.fi/myyntipaikkahaku" target="_new">Lipunmyyntipisteet</a><br/>
+		Epäiletkö että Junat ei kulje?<br/>
+		<a data-role="button" href="http://m.reittiopas.fi/fi/index.php?mod=di" target="_new">HSL:n poikkeustiedotteet</a><br/>
+		</div>
+
+		<div data-role="collapsible" data-collapsed="true">
+		<h3>Autoilijalla hyödyllisiä palveluita</h3>
+		Onko takabaxissa lehtiä ja muuta kierrätettävää?<br/>
+		<a data-role="button" href="http://jatehuolto.hsy.fi/kierratyspiste/" target="_new">Kierrätyspisteet</a><br/>		
+		Onko tankki tyhjä<br/>
+		<a data-role="button" href="http://www.st1.fi/huoltoasemat" target="_new">ST1-asemat</a><br/>		
+		<a data-role="button" href="http://www.abcasemat.fi" target="_new">ABC-asemat</a><br/>		
+		<a data-role="button" href="http://neste.fi/paikkakuntahaku.aspx" target="_new">Neste-asemat</a><br/>		
+		</div>
+
+
+		<div data-role="collapsible" data-collapsed="true">
+		<h3>Käyttöohjeet</h3>
+		<p>
+		Ohjelman nimi tulee sanoista Park and ride, joka tarkoittaa liityntäpysäköintiä.
+		</p><p>
+		Ohjelman avulla voit löytää sinulle sopivan liityntäpysäköintipaikan 
+		tai muun kaupallisen pysäköintipaikan.
+		</p><p>
+		Sivun lautauksen yhteydessä selain kysyy lupaa saada paikantaa sinut. Antamalla tuon luvan, ohjalma saa käyttöönsä
+		tiedon missä olet tällä hetkellä. Tuota tietoa käytetään, kun ohjelma laskee eri pysäköintipaikkojen etäisyyksiä.
+		</p>
+		<p>
+		
+		P-paikat painikkeella ohjelma hakee pysäköintipaikat ja näyttää ne lajiteltuna niin, että lähimmät ovat ensin.
+		Voit rajata hakua Helsinkiin johtavien pääväylien, rautateiden tai metrolinjojen mukaan. Lisäksi tuossa rajauslistassas
+		on mahdollisuus hakea tietyllä säteellä  lähimmät pakat tai valitun kunnan sisällä olevat paikat.
+		</p>
+		<p>
+		Lisäksi voit antaa paikan nimen tai nimen osan
+		jonka haluat etsiä. Voit hakea vastaavalla tavalla pysäkkejä, jotka voivat olla asemia tai joitain muita solmuja, joissa 
+		voit vaihtaa autosta junaan, bussiin, metroon tai ratikkaan.
+		</p><p>
+		P-paikkojen hakutuloksen nimeä tökkäämällä näyttää ohjelma P-paikkaa lähinnä olevan pysäkin. Pysäkin nimeä klikkaamalla taas ohjelma 
+		näyttää pysäkin lähellä olevat liityntäpysäköintipaikat. Näin voit siirtyä näiden kahden näkymän välillä kätevästi.
+		</p><p>
+		<img src="googlemapslinkki.png"  width="95%"><br/>
+		P-paikkojen oikeassa laidassa olevasta ikonista <img align="center" height="20px" src="location.png"> klikkaamalla voit avata selaimen toiseen välilehteen Googlen kartan, jossa
+		näytetään kyseisen pysäköintipaikan sisäänkäynnin sijainti. Voit näin aloittaa navigoinnin valitsemaasi kohteeseen.
+		</p><p>
+		<img src="reittiopaslinkki.png" width="95%"><br/>
+		Pysäkin oikeassa laidassa olevasta ikonista <img align="center" height="20px" src="reittiopas.png"> klikkaamalla avautuu selaimen toiseen väilehteen HSL:n Reittiopas, jolle on valmiiksi 
+		välitetty kyseisen pysäkin osoite lähtöpisteeksi ja Helsinki päätepisteeksi. Sieltä voi tarkastella jatkoyhteyksiä.
+		</p><p>
+		<img src="example.png" width="98%"><br/>
+		P-paikan hakutuloksessa on kehystettynä vapaana olevien paikkojen määrä / kokonaispaikkamäärä. Useimmissa paikoissa ei ole
+		tiedossa vaapaana olevien paikojen määrää, jolloin näytetään P-paikkojen kokonaismäärä.  Jos vapaana olevien paikkojen
+		määrä on tiedossa, näyttää ohjelma vapaana olevien paikkojen määrän perusteella
+		ennusteen arvoituna sillä ajanhetkellä, milloin suunnilleen olisit tuolla P-paikalla, jos lähtisit heti matkaan.
+		</p><p>
+		P-paikkoja klo 20:10 n. 85/140 tarkoittaa että klo 20:10 todennäköisesti on vielä 85 paikkaa vapaana 140:stä.
+		</p>
+		</div>
+		
+		<div data-role="collapsible" data-collapsed="true">
+		<h3>Palaute</h3>
+		Haluatko antaa palautetta tai kehitysehdotuksia?<br/>
+		<a data-role="button"  href="mailto:ari@arivain.com" target="_new">Anna palautetta</a><br/>
+		</div>
+
+		<div data-role="collapsible" data-collapsed="true">
+		<h3>Tietoa ohjelmasta</h3>
+		<p>
+		Tämä ParkkiJaRaide-ohjelma perustuu HSL:n uuteen liityntäpysäköintipalveluun, joka on vielä rakenteilla.
+		Liityntäpysäköintipaikkoja ja pysäkkejä koskevat tiedot haetaan toistaiseksi testi-järjestelmästä, jonka osoite on
+		<a href="http://test.p.hsl.fi" target=_new>test.p.hsl.fi.</a>. Palvelussa ei ole vielä kaikkia käytettävissä olevia
+		liityntäpysäköintipaikkoja. Järjestelmään ei ole myöskään liitetty vielä pysäköintioperaattorien järjestelmiä, joten
+		dynaamista tietoa parkkipaikoissa vapaana olevista paikoista ei vielä saada kuin koeluontoisesti muutamista satunnaisesti.
+		</p>
+		<p>
+		Tätä ohjelmaa tullaan kehittämään voimakkaasti lähikuukausien aikana. Tavoitteena on tehdä ohjelmasta monipuolinen
+		ja henkilöauton ja joukkoliikenteen sekakäyttäjälle optioimoitu palvelu. Tämä ohjelma tullaan julkaisemaan myöhemmin kytkettynä varsinaiseen tuotantojärjestelmään, joka löytyy osoitteesta p.hsl.fi.
+		Ohjelma tullaan julkaisemaan Android, Windows ja iPhone puhelimiin ja padeihin ladattavana sovelluksena.
+		</p>
+		<p>
+		Emme ota mitään vastuuta ohjelman toiminnasta ja sen näyttämistä tiedoista. Toivomme kuitenkin että tämä on hyödyllinen
+		ja auttaa meitä liikenteen sekakäyttäjiä kun yritämme optioima päivittäisiä reissujamme Helsingin seudulla. Toivomme myös
+		että tämä edistää joukkoliikenteen käyttöä ja auttaa pysäköintioperaattoreita palvelemaan asiakkaita.
+		</p>
+		<p>
+		Ohjelman lähdekoodin oikeudet omistaa Konsultointi Ari Vainio Oy <br/>
+		Copyright (c) Konsultointi Ari Vainio Oy
+		</p>
+		</div>
+
+	
+		</div>
+	</div>	
+</div>
+
+<!-- setup page -->
+<div data-role="page" id="setup" data-theme="a" style="padding-right:0px; padding-left:0px;">
+	<div role="banner" class="ui-header ui-bar-a" data-role="header" data-position="fixed">
+		<a href="#page1" data-icon="back" onClick="backToHome()" data-transition="slidefade">Takaisin</a>
+		<h1 aria-level="1" role="heading" class="ui-title">Asetukset</h1>
+	</div>
+
+	<div class="ui-field-contain" style="padding-right:8px; padding-left:8px; padding-bottom: 0px; padding-top: 0px; margin-top: 2px">
+			<label for="mapselect" class="select">Karttapalvelu, johon karttalinkit avautuvat:</label>
+			<select name="mapselect" id="mapselect" style="width:100%" onChange="setItUp()">
+				<option value="Google" >Google Maps</option>
+				<option value="OSM" >Open Street Maps</option>
+				<option value="APPLEMAP">iPhone Apple Map</option>
+			</select>
+	</div>
+	
+	<div class="ui-field-contain" style="padding-right:8px; padding-left:8px; padding-bottom: 0px; padding-top: 0px; margin-top: 2px">
+			<form action="#" name="fSetup" accept-charset="utf-8">
+				<label for="defaultRoute" class="select">Oletusreitti, kun sivu ladataan:</label>
+				<select name="defaultRoute" id="defaultRoute" style="width:100%"  onChange="setItUp()">
+					<option value="-Valitse oletusreitti-">-Valitse oletusreitti tai -alue-</option>
+				</select>
+			</form>
+	</div>
+	
+	<div class="ui-field-contain" style="padding-right:8px; padding-left:8px; padding-bottom: 0px; padding-top: 0px; margin-top: 2px">
+			<label for="txtSearchInit" class="select">Nimihaun oletusarvo, kun sivu ladataan</label>
+			<input type="text" name="txtSearchInit" id="txtSearchInit" value="" placeholder="- esim. Ruoholahti -"  onBlur="setItUp()">
+	</div>
+
+	
+	<div class="ui-field-contain" style="padding-right:8px; padding-left:8px; padding-bottom: 0px; padding-top: 0px; margin-top: 2px">
+			<label for="destination" class="select">Määränpää johon, reittiopas tekee haut:</label>
+			<input type="text" name="destination" id="destination" value="" placeholder="- esim. Katu 1, Helsinki -"  onBlur="setItUp()">
+	</div><!-- setup form-->
+</div>
+
+</body>
+
+</html>
