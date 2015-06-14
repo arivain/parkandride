@@ -12,6 +12,7 @@ Source code for this program is dual-licensed under the EUPL v1.2 and AGPLv3 lic
 <meta names="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
 <link rel="stylesheet" href="http://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.css" />
+<link rel="stylesheet" href="./styles/ol.css" />
 
 <style>
 
@@ -64,7 +65,7 @@ border-radius: none !important;
 
 
 
-#mapview { width:100%; height:40%; }  //TODO: korkeuden säätö fixContentHeight funktiolla ei toiminut
+#mapview { width:100%; height:100%; }  //TODO: korkeuden säätö fixContentHeight funktiolla ei toiminut
 
 .ol-popup {
 	position: relative;
@@ -368,11 +369,11 @@ var header, footer, content, viewHeight, contentHeight;
 function fixContentHeight() {
 	header = $("div[data-role='header']:visible");  
 	searchdiv = $("div[id='searchDiv']:visible");
-	mapdiv = $("div[data-role='mapview']:visible:visible");
+	mapdiv = $("div[id='mapview']:visible:visible");
 	viewHeight = $(window).height();
 	contentHeight = viewHeight - header.outerHeight() - searchdiv.outerHeight();
-	mapdiv.height(Math.floor(contentHeight/2)); // 50% for map
-	mapdiv.updateSize();
+	mapdiv.height(Math.floor(contentHeight*5/7)); // 50% for map
+	map.updateSize();
 }
 
 $(document).ready(function(){
@@ -471,13 +472,13 @@ $( document ).on( "pageinit", "#setup", function( event ) {
 				<li class="ui-block-a">
 					<a id="tabFac" onClick="searchAndShow1()" 
 			    		  href="#"> <!-- location -->
-			    		<span  class="ui-btn-text"><img src="my_parking18.png"><br/>P-paikat</span>
+			    		<span  class="ui-btn-text"><!--img src="my_parking18.png"><br/-->P-paikat</span>
 			    	</a>
 			    </li>
 				<li class="ui-block-b">
 					<a id="tabHub" onClick="searchAndShow2()" 
 						 href="#"> <!-- arrow-u-r-->
-						<span class="ui-btn-text"><img src="my_railway_station18.png"><br/>Pysäkit</span>
+						<span class="ui-btn-text"><!--img src="my_railway_station18.png"><br/-->Pysäkit</span>
 					</a>
 				</li>	
 			</ul>
